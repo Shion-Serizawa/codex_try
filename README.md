@@ -1,4 +1,9 @@
-プロジェクト: 2ch風BBS（Deno Fresh + Postgres）
+# 注意
+- あくまでこれはCodexのお試しでDeno Deploy EAで使えるまでもっていったものです．
+- 問題点が以下のようにあるので，デプロイ(公開)自体は中止しています．
+  - 全部SSRなので，サイトがもっさりしている
+  - SQLインジェクションとかが可能など，セキュリティ問題あり．
+# プロジェクト: 2ch風BBS（Deno Fresh + Postgres）
 
 概要
 - フロントエンド: Fresh（SSR + islands、Twindデフォルト）
