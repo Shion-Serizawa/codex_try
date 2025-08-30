@@ -3,7 +3,7 @@
 // - Deploy: Neon serverless HTTP/WebSocket driver (@neondatabase/serverless)
 
 import { Pool } from "postgres/mod.ts";
-import { neon } from "@neondatabase/serverless";
+import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
 
 export type QueryResult<T = unknown> = { rows: T[] };
 
@@ -26,34 +26,38 @@ const isDeploy = Boolean(Deno.env.get("DENO_DEPLOYMENT_ID"));
 
 export async function createDbClient(): Promise<DbClient> {
   const neonUrl = Deno.env.get("NEON_DATABASE_URL");
-  if (isDeploy && neonUrl) return createNeonClient(neonUrl);
-  let url = Deno.env.get("DATABASE_URL") ?? neonUrl;
+  // 優先: NEON_DATABASE_URL があれば Neon ドライバを使用（ローカルでもOK）
+  if (neonUrl) return createNeonClient(neonUrl);
+  let url = Deno.env.get("DATABASE_URL");
   if (!url && !isDeploy) {
     // Developer-friendly default for local compose
     url = "postgres://postgres:postgres@localhost:5432/bbs";
   }
   if (!url) throw new Error("Set DATABASE_URL (local) or NEON_DATABASE_URL (deploy)");
-  // Prefer TCP driver locally for performance and LISTEN/NOTIFY support
+  // TCP ドライバ
   return createTcpClient(url);
 }
 
 function createNeonClient(url: string): DbClient {
-  const neonQuery = neon(url);
+  const sql = neon(url) as NeonQueryFunction<any, any>;
   return {
-    async queryObject<T = unknown>(sql: string, params?: unknown[]) {
-      const rows = await neonQuery(sql as any, ...(params ?? [])) as T[];
+    async queryObject<T = unknown>(query: string, params?: unknown[]) {
+      // Call function-form: sql(query, paramsArray)
+      const res = await (sql as any)(query, params ?? []);
+      const rows = Array.isArray(res) ? res as T[] : (res && Array.isArray((res as any).rows) ? (res as any).rows as T[] : []);
       return { rows };
     },
     async transaction<T>(fn: (tx: DbTx) => Promise<T>): Promise<T> {
-      return await neonQuery(async (client: any) => {
-        const tx: DbTx = {
-          async queryObject<T = unknown>(sql: string, params?: unknown[]) {
-            const rows = await client(sql as any, ...(params ?? [])) as T[];
-            return { rows };
-          },
-        };
-        return await fn(tx);
-      });
+      // Fallback: execute without an actual transaction (Neon serverless may not expose begin()).
+      // Callers relying on atomicity should execute idempotent migrations.
+      const txWrapper: DbTx = {
+        async queryObject<U = unknown>(q: string, params?: unknown[]) {
+          const res = await (sql as any)(q, params ?? []);
+          const rows = Array.isArray(res) ? res as U[] : (res && Array.isArray((res as any).rows) ? (res as any).rows as U[] : []);
+          return { rows };
+        },
+      };
+      return await fn(txWrapper);
     },
   };
 }

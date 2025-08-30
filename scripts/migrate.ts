@@ -30,8 +30,15 @@ async function up(steps?: number) {
   for (const f of toApply) {
     const sql = await Deno.readTextFile(join(MIG_DIR, f));
     console.log(`Applying ${f}...`);
+    const isNeon = Boolean(Deno.env.get("NEON_DATABASE_URL"));
     await db.transaction(async (tx) => {
-      await tx.queryObject(sql);
+      if (isNeon) {
+        for (const stmt of splitSqlStatements(sql)) {
+          if (stmt.trim()) await tx.queryObject(stmt);
+        }
+      } else {
+        await tx.queryObject(sql);
+      }
       await tx.queryObject(`INSERT INTO schema_migrations(filename) VALUES ($1)`, [f]);
     });
   }
@@ -73,4 +80,65 @@ if (import.meta.main) {
     console.error("Usage: migrate.ts up|down [steps]");
     Deno.exit(1);
   }
+}
+
+// Split multi-statement SQL into individual statements, respecting simple quoting rules
+function splitSqlStatements(input: string): string[] {
+  const stmts: string[] = [];
+  let cur = "";
+  let i = 0;
+  let inSingle = false;
+  let inDouble = false;
+  let dollarTag: string | null = null; // e.g., $$ or $func$
+  while (i < input.length) {
+    const ch = input[i];
+    const next2 = input.slice(i, i + 2);
+    // Handle dollar-quoted strings
+    if (!inSingle && !inDouble) {
+      if (dollarTag) {
+        if (input.startsWith(dollarTag, i)) {
+          cur += dollarTag;
+          i += dollarTag.length;
+          dollarTag = null;
+          continue;
+        }
+      } else if (ch === '$') {
+        // Match $tag$
+        const m = input.slice(i).match(/^\$[A-Za-z0-9_]*\$/);
+        if (m) {
+          dollarTag = m[0];
+          cur += dollarTag;
+          i += dollarTag.length;
+          continue;
+        }
+      }
+    }
+    // Single-line comments -- ...\n
+    if (!inSingle && !inDouble && !dollarTag && next2 === '--') {
+      const nl = input.indexOf('\n', i + 2);
+      if (nl === -1) {
+        cur += input.slice(i);
+        break;
+      } else {
+        cur += input.slice(i, nl + 1);
+        i = nl + 1;
+        continue;
+      }
+    }
+    // Handle quotes
+    if (!dollarTag) {
+      if (ch === "'" && !inDouble) inSingle = !inSingle;
+      else if (ch === '"' && !inSingle) inDouble = !inDouble;
+    }
+    if (ch === ';' && !inSingle && !inDouble && !dollarTag) {
+      stmts.push(cur);
+      cur = "";
+      i++;
+      continue;
+    }
+    cur += ch;
+    i++;
+  }
+  if (cur.trim()) stmts.push(cur);
+  return stmts;
 }
