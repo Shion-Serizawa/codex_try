@@ -1,0 +1,14 @@
+{
+  "tasks": {
+    "migrate:up": "deno run -A scripts/migrate.ts up",
+    "migrate:down": "deno run -A scripts/migrate.ts down",
+    "start": "deno run -A main.ts",
+    "seed": "deno run -A scripts/seed.ts"
+  },
+  "importMap": "import_map.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
+    "types": ["$fresh/types.ts"]
+  }
+}

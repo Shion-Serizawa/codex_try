@@ -1,0 +1,17 @@
+# Env files
+.env
+.env.local
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+
+# Logs
+*.log
+logs/
+
+# Build/cache (none by default in Deno, but safe)
+dist/
+tmp/
+
