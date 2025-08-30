@@ -1,44 +1,34 @@
-Project: 2ch-like BBS (Deno Fresh + Postgres)
+プロジェクト: 2ch風BBS（Deno Fresh + Postgres）
 
-Overview
-- Frontend: Fresh (SSR + islands). UI default (Twind).
-- Backend: API routes separated in code structure with middleware.
-- DB: Postgres. Local via Docker (TCP driver). Deploy via Neon HTTP/WebSocket driver on Deno Deploy EA.
-- Realtime: SSE with per-process BroadcastChannel, pluggable to shared pub/sub later.
+概要
+- フロントエンド: Fresh（SSR + islands、Twindデフォルト）
+- バックエンド: Fresh の API ルート。コード構成でフロントとバックを分離、ミドルウェアでレート制限
+- DB: Postgres（ローカルは Docker、Deploy は Neon Serverless）
+- リアルタイム: SSE（サーバ内pub/sub。将来、共有Pub/Subに差し替え可能）
 
-Local Dev
-- Copy `.env.example` to `.env` and adjust values. The app auto-loads `.env` locally (no manual exports needed).
-- Start DB: `docker compose up -d`
-- Run migrations: `deno task migrate:up`
-- Seed initial data (optional): `deno task seed`
-- Start server: `deno task start`
+ローカル開発
+- `.env.example` を `.env` にコピー（ローカルでは自動で読み込まれます）
+- DB 起動: `docker compose up -d`
+- マイグレーション: `deno task migrate:up`
+- （任意）初期データ投入: `deno task seed`
+- 開発サーバ: `deno task start` → http://localhost:8000/
 
-Deploy (Deno Deploy EA)
-- Use Neon serverless Postgres and the `@neondatabase/serverless` driver (HTTP/WebSocket) — works in edge runtimes without raw TCP.
-- Env:
-  - NEON_DATABASE_URL=... (copy from Neon)
-  - APP_SECRET=... (random, used for per-thread/day author hash)
-- Optional moderation/admin:
-  - ADMIN_SECRET=...
+主なコマンド
+- `deno task migrate:up` / `deno task migrate:down` — スキーマ適用/リバート
+- `deno task seed` — 初期の板データ投入（Boards追加UIは削除済みのため、最初はこれを推奨）
+- `deno task start` — Fresh アプリ起動
 
-Path handling on Deploy
-- Avoid using `Deno.cwd()` and relative file reads at runtime. This app uses URL-based imports and Fresh’s manifest.
-- Migrations resolve paths relative to the script file (`import.meta.url`), which is robust in different runners, but migrations are intended for local/dev only.
+ディレクトリ
+- `routes/` — ページとAPI
+- `islands/` — クライアント挙動（例: `ThreadClient`）
+- `backend/` — DBクライアント/サービス/リアルタイム等のサーバロジック
+- `db/migrations/` — SQLマイグレーション
+- `scripts/` — migrate/seed スクリプト
+- `import_map.json` — 依存マッピング（Fresh, Preact, Twind, Neon など）
 
-Realtime
-- Default: SSE using per-instance BroadcastChannel. Works for all clients hitting the same instance. To guarantee cross-instance fanout, add a shared pub/sub (e.g., Neon LISTEN/NOTIFY if supported by the chosen driver, or a managed Redis/Upstash HTTP pub/sub). Interface is abstracted under `backend/realtime/`.
+デプロイ
+- Deno Deploy + Neon Serverless を想定。詳細手順は `doc/deploy.md` を参照してください。
 
-Structure (high-level)
-- backend/
-  - db/ (drivers + client factory)
-  - services/ (boards, threads, posts)
-  - realtime/ (SSE broadcaster)
-- db/migrations/ (SQL files)
-- routes/ (Fresh pages)
-- routes/api/ (Fresh API endpoints)
-- scripts/ (migrate.ts)
-
-Notes
-- Self-delete moves the row into `deleted_posts` in a transaction, then deletes from `posts`.
-- Author ID is per-thread (threadId + date + IP + APP_SECRET) short hash.
-- Rate limiting & middleware will be in-memory initially; for Deploy scale, back with a remote store.
+注意事項
+- マイグレーションは Deploy 上では実行しません。ローカルから Neon に向けて `scripts/migrate.ts up` を実行してください。
+- 現状のリアルタイムはサーバ内pub/subです。複数インスタンス配信は未対応（必要に応じて Upstash/Redis や Neon LISTEN/NOTIFY を導入）。
