@@ -11,14 +11,17 @@ export type NewPostInput = {
 };
 
 export async function listPosts(db: DbClient, threadId: number, limit = 100, cursor?: string) {
+  // Validate and sanitize limit parameter
+  const sanitizedLimit = Math.max(1, Math.min(parseInt(String(limit), 10) || 100, 1000));
+  
   const afterId = cursor ? Number(cursor) : undefined;
   const res = await db.queryObject<any>(
     `SELECT id, content, author_name, author_hash, created_at, reply_to
      FROM posts
      WHERE thread_id=$1 AND is_deleted=false ${afterId ? "AND id > $2" : ""}
      ORDER BY id ASC
-     LIMIT ${limit}`,
-    afterId ? [threadId, afterId] : [threadId],
+     LIMIT $${afterId ? "3" : "2"}`,
+    afterId ? [threadId, afterId, sanitizedLimit] : [threadId, sanitizedLimit],
   );
   return res.rows.map((r) => ({
     id: typeof r.id === "bigint" ? Number(r.id) : r.id,
